@@ -140,6 +140,34 @@ def log_environment(lumberjack: logging.Logger):
     lumberjack.info(f"GIMP Python3 sys.path is:\n    {sys_pth}")
 
 
+def is_host_configured(value: str, raise_exception: bool = False) -> bool:
+    if value is None:
+        err_msg: str = "host is None."
+        Gimp.message(err_msg)
+        LOGGER_GCUI.error(err_msg)
+        if raise_exception:
+            raise ValueError(err_msg)
+    if not value:
+        err_msg: str = "host is empty."
+        Gimp.message(err_msg)
+        LOGGER_GCUI.error(err_msg)
+        if raise_exception:
+            raise ValueError(err_msg)
+    if not value.strip():
+        err_msg: str = "host is whitespace."
+        Gimp.message(err_msg)
+        LOGGER_GCUI.error(err_msg)
+        if raise_exception:
+            raise ValueError(err_msg)
+    if "UNINITIALIZED" in value.upper():
+        err_msg: str = "host is uninitialized."
+        Gimp.message(err_msg)
+        LOGGER_GCUI.error(err_msg)
+        if raise_exception:
+            raise ValueError(err_msg)
+    return True
+
+
 class ProcedureCategory(Enum):
     CONFIG = auto()
     LIVE_CONNECTION = auto()
@@ -179,7 +207,7 @@ class GimpComfyUI(Gimp.PlugIn):
     HOME: str = os.path.expanduser('~')
     MESSAGE_REGISTRATION = "Registering " + __file__ + ":" + PYTHON_PLUGIN_NAME
     MESSAGE_REGISTRATION_COMPLETED = __file__ + ":" + PYTHON_PLUGIN_NAME + " returned."
-    VERSION: str = "0.8.0"
+    VERSION: str = "0.8.1"
 
     # Procedure names.
     PROCEDURE_ABOUT_CONFIG = PYTHON_PLUGIN_NAME + "-About-Config"
@@ -215,13 +243,13 @@ class GimpComfyUI(Gimp.PlugIn):
     ]
 
     # Configurable
-    COMFYUI_HOST: str = "UNINITIALIZED"
+    COMFYUI_HOST: str = "UNINITIALIZED_COMFYUI"
     COMFYUI_PATH: str = ""
     COMFYUI_PORT: int = 8188
     COMFYUI_PROTOCOL: str = "http"
     COMFYUI_ORIGIN: str = f"{COMFYUI_HOST}:{COMFYUI_PORT}"
     COMFYUI_URL: str = f"http://{COMFYUI_ORIGIN}"  # Aka server address, server URL etc.
-    TRANSCEIVER_HOST: str = "UNINITIALIZED"
+    TRANSCEIVER_HOST: str = "UNINITIALIZED_TRANSCEIVER"
     TRANSCEIVER_PATH: str = ""
     TRANSCEIVER_PORT: int = 8765
     TRANSCEIVER_PROTOCOL: str = "ws"
@@ -1250,7 +1278,7 @@ class GimpComfyUI(Gimp.PlugIn):
         # NOTE: We can be (and are) spammed with duplicate events. We should ignore duplicates.
         # we should ignore the event.
         if source.get_active():
-            LOGGER_SDGUIU.debug(f"source is a {source_type_name}{data_msg}")
+            LOGGER_GCUI.debug(f"source is a {source_type_name}{data_msg}")
             self.auto_queue_prompt = ("2" == data)
 
     # Pass arguments are (almost) as defined in https://developer.gimp.org/api/3.0/libgimp/class.ImageProcedure.html
@@ -1262,7 +1290,10 @@ class GimpComfyUI(Gimp.PlugIn):
                       proc_config,  # GimpProcedureConfigRun-Follow-in-ComfyUI, it's probably a synthetic type  # noqa
                       args  # Optional  # noqa
                       ) -> Gimp.ValueArray:
-
+        GimpComfyUI.__configure_plugin_class()  # This invocation will provide class-scoped state
+        GimpUi.init(GimpComfyUI.PYTHON_PLUGIN_NAME)
+        # Possible GIMP bug. Message is always logged to console, not popup box
+        Gimp.message_set_handler(Gimp.MessageHandlerType.MESSAGE_BOX)
         drawables_names_joined: str = "𝑢𝑛𝑘𝑛𝑜𝑤𝑛🤷"  # noqa This assigned value should never be used.
 
         def populate_transceiver_dialog(dialog: Gtk.Dialog):
@@ -1286,7 +1317,11 @@ class GimpComfyUI(Gimp.PlugIn):
                 drawables_names = [d.get_name() for d in drawables]
                 # This is executed before populate_transceiver_dialog() is called, so the label is set correctly.
                 drawables_names_joined = ", ".join(drawables_names)  # noqa This is used in populate_transceiver_dialog
+            drawable: Gimp.Drawable
             for drawable in drawables:
+                follower_message: str = f"Following drawable {drawable.get_name()}"
+                Gimp.message(follower_message)
+                LOGGER_GCUI.debug(follower_message)
                 image_notifier.track_drawables(drawables={drawable}, listener=drawable_change_listener)
 
             ret_values = procedure.new_return_values(Gimp.PDBStatusType.SUCCESS)
@@ -1320,6 +1355,12 @@ class HandleLayerChange(DrawableChangeListener):
         :param drawable: The drawable to send
         :return: None
         """
+        transceiver_host: str = GimpComfyUI.TRANSCEIVER_HOST
+        is_host_configured(value=transceiver_host, raise_exception=True)  # Will raise value exception.
+        transceiver_port: int = GimpComfyUI.TRANSCEIVER_PORT
+        transceiver_url: str = url_string(protocol="ws",
+                                          host=transceiver_host,
+                                          port=transceiver_port)
         d_id = drawable.get_id()
         d_name = drawable.get_name()
         change_message: str = f"Drawable {d_id} \"{d_name}\"changed."
@@ -1333,23 +1374,26 @@ class HandleLayerChange(DrawableChangeListener):
                 raise MemoryError(f"Image requires too much memory: Used={memory_usage}, MAX={MAX_MEMORY_USAGE}."
                                   f" Try scaling image down.")
             gimp_websocket: WebSocket = WebSocket()
-            transceiver_host: str = GimpComfyUI.TRANSCEIVER_HOST
-            transceiver_port: int = GimpComfyUI.TRANSCEIVER_PORT
-            transceiver_url: str = url_string(protocol="ws",
-                                              host=transceiver_host,
-                                              port=transceiver_port)
+            # On Windows, connection failures log errors that can't be seen by python.
             try:
+                connection_attempt_msg: str = f"Attempting connection to {transceiver_url}..."
+                LOGGER_GCUI.debug(connection_attempt_msg)
                 # https://websocket-client.readthedocs.io/en/latest/core.html
                 connect_result = gimp_websocket.connect(transceiver_url, max_size=MAX_MEMORY_USAGE)
                 if connect_result:
                     LOGGER_GCUI.debug(f"connect_result={connect_result}")
+                else:
+                    LOGGER_GCUI.debug(f"No connect_result from {transceiver_url}")
                 return_code_0: int = gimp_websocket.send(payload=image_as_str)
                 LOGGER_GCUI.debug(f"return_code_0={return_code_0}")
                 response_0 = gimp_websocket.recv()
                 LOGGER_GCUI.debug(f"response_0={response_0}")
-                gimp_websocket.close()
             except Exception as ws_err:
+                connection_failure_msg: str = f"Failed connection to {transceiver_url}"
+                LOGGER_GCUI.error(connection_failure_msg)
                 LOGGER_GCUI.exception(ws_err)
+            finally:
+                gimp_websocket.close()
             if self._chassis.auto_queue_prompt:
                 gimp_websocket = WebSocket()
                 try:

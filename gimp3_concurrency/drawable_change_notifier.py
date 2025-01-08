@@ -196,8 +196,10 @@ class DrawableChangeNotifier:
                         for listener in self._drawable_change_listeners:
                             try:
                                 listener.drawable_changed(drawable)
+                            # Some exceptions are normally previously caught, and so never get here.
                             except Exception as e_except:
                                 LOGGER_CONCURRENCY.exception(e_except)
+                                Gimp.message(str(e_except))
                         self._id_crc_map[d_id] = new_crc
                     else:
                         # LOGGER_CONCURRENCY.info(f"Drawable{d_id} unchanged")
