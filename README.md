@@ -89,6 +89,7 @@ interface. Linux GIMP's embedded python cannot be used externally.
 options, put each directory name in quotes, to avoid problems with spaces.
 
 If a dialog opens:
+
 6) Choose your account's GIMP plug-in folder, i.e. ``~/AppData/Roaming/Gimp/3.0/plug-ins`` and click "Ok"
 7) Choose the ComfyUI custom_nodes folder, i.e. ``~/projects/3rd_party/ComfyUI/custom_nodes`` and click "Ok"
 Even if you do not have a local ComfyUI installed, pick an existing directory, perhaps the temp directory. Otherwise, 
@@ -98,6 +99,7 @@ directories, and prints their location.
 and click "Ok". Again, even if you do not have StableDiffusion nor ComfyUI installed, pick an existing directory.
 
 If a dialog does not open:
+
 6) At the prompt `Please provide an existing directory path for gimp_plugins_dir`, enter your account's GIMP plug-in folder, i.e. ``~/AppData/Roaming/Gimp/3.0/plug-ins`` and press "return"
 7) At the prompt `Please provide an existing directory path for comfyui_custom_nodes_dir`, enter the ComfyUI custom_nodes folder, i.e. ``~/projects/3rd_party/ComfyUI/custom_nodes`` and press "return"
 8) At the prompt `Please provide an existing directory path for stable_diffusion_data_dir`, enter your StableDiffusion data folder, i.e. `L:/data/stable_diffusion`, or `~/projects/3rd_party/ComfyUI` and press "return"
