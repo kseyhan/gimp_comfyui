@@ -36,8 +36,8 @@ the plug-in.
 
 # gi is the python module for PyGObject. It is a Python package which provides bindings for GObject based libraries such
 # as GTK, GStreamer, WebKitGTK, GLib, GIO and many more. See https://gnome.pages.gitlab.gnome.org/pygobject/
-import gi
 import gettext
+import gi
 import logging.config
 import os.path
 
@@ -50,7 +50,9 @@ gi.require_version('GimpUi', '3.0')  # noqa: E402
 
 # noinspection PyUnresolvedReferences
 from gi.repository import Gegl, Gimp, GimpUi
-# from gi.repository import GLib, GObject, Gdk, GdkPixbuf, Gio, Gtk
+# noinspection PyUnresolvedReferences
+from gi.repository import GdkPixbuf, GLib, Gtk
+# from gi.repository import  GdkPixbuf, GLib, GObject, Gdk, GdkPixbuf, Gio, Gtk
 from gimp3_concurrency.drawable_change_notifier import *
 from utilities.babl_gegl_utils import *
 from utilities.cui_net_utils import *
@@ -1251,14 +1253,15 @@ class GimpComfyUI(Gimp.PlugIn):
             LOGGER_SDGUIU.debug(f"source is a {source_type_name}{data_msg}")
             self.auto_queue_prompt = ("2" == data)
 
+    # Pass arguments are (almost) as defined in https://developer.gimp.org/api/3.0/libgimp/class.ImageProcedure.html
     def publish_layer(self,
-                         procedure: Gimp.ImageProcedure,
-                         run_mode,  # noqa
-                         image,  # noqa
-                         n_drawables,  # noqa
-                         drawables,  # noqa
-                         args,  # noqa
-                         ) -> Gimp.ValueArray:
+                      procedure: Gimp.ImageProcedure,
+                      run_mode,  # Gimp.RunMode  # noqa
+                      image,  # Gimp.Image  # noqa
+                      drawables,  # list[Gimp.Layer]
+                      proc_config,  # GimpProcedureConfigRun-Follow-in-ComfyUI, it's probably a synthetic type  # noqa
+                      args  # Optional  # noqa
+                      ) -> Gimp.ValueArray:
 
         drawables_names_joined: str = "𝑢𝑛𝑘𝑛𝑜𝑤𝑛🤷"  # noqa This assigned value should never be used.
 
@@ -1278,32 +1281,11 @@ class GimpComfyUI(Gimp.PlugIn):
         try:
             image_notifier: DrawableChangeNotifier = DrawableChangeNotifier(
                 dialog_customizer=populate_transceiver_dialog)
-            run_mode_str = str(run_mode)
-            image_present = f"Image present" if image is not None else f"Image is None"
-            drawables_cnt_str = f"n_drawables={n_drawables}"
-            log_message = f"run_mode_str={run_mode_str}\n{image_present}\n{drawables_cnt_str}\n"
+
             if drawables is not None and drawables:
-                drawables_type = type(drawables)
-                drawables_type_name = drawables_type.__name__
-                log_message += f"drawables is a {drawables_type_name}; {n_drawables}\n"
                 drawables_names = [d.get_name() for d in drawables]
                 # This is executed before populate_transceiver_dialog() is called, so the label is set correctly.
-                drawables_names_joined = ", ".join(drawables_names)  # noqa
-            if args is not None and args:
-                args_type = type(args)
-                args_type_name = args_type.__name__
-                a_len = -1
-                try:
-                    a_len = len(args)
-                except Exception:  # noqa
-                    pass
-                if a_len >= 0:
-                    args_cnt_str = f"args count={a_len}"
-                    args_literals = ', '.join(f'"{w}"' for w in args)
-                else:
-                    args_cnt_str = " singleton"
-                    args_literals = ""
-                log_message += f"args is a {args_type_name}; {args_cnt_str}\n{args_literals}\n"
+                drawables_names_joined = ", ".join(drawables_names)  # noqa This is used in populate_transceiver_dialog
             for drawable in drawables:
                 image_notifier.track_drawables(drawables={drawable}, listener=drawable_change_listener)
 
